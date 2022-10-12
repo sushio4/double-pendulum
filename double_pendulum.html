@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html>
+<body>
+	<button style="font-size:24px;" onclick="pause()">
+		Play/Pause
+    </button>
+    <button style="font-size:24px;" onclick="restart()">
+		Restart
+    </button>
+    <button id="traceButton" style="font-size:24px;" onclick="toggleTrace()">
+    	Tracing: on
+    </button>
+    <button style="font-size:24px;position:relative;top:0px" onclick="traceCtx.clearRect(0,0,trace.width,trace.height);">
+    	Clear Traces
+    </button>
+    <p></p>
+    <p1>dt:</p1>
+    <div class="slidecontainer">
+    	<input step="any" style="width:300px" type="range" min="1" max="100" value="50" class="slider" id="dtSlider">
+    	<input id="dtVal" style="font-size:20px;position:relative;left:10px;bottom:2px;width:60px"></input>
+	</div>
+	
+	<p2>L1:</p2>
+	<div class="slidecontainer">
+    	<input style="width:300px" type="range" min="20" max="150" value="100" class="slider" id="L1Slider">
+        <input id="L1Val" style="font-size:20px;position:relative;left:10px;bottom:2px;width:60px"></input>
+	</div>
+	
+	<p3>L2:</p3>
+	<div class="slidecontainer">
+    	<input style="width:300px" type="range" min="20" max="150" value="100" class="slider" id="L2Slider">
+    	<input id="L2Val" style="font-size:20px;position:relative;left:10px;bottom:2px;width:60px"></input>
+	</div>
+	
+	<p4>Theta1:</p4>
+	<div class="slidecontainer">
+    	<input step="any" style="width:300px" type="range" min="-315" max="314.2" value="39" class="slider" id="th1Slider">
+    	<input id="th1Val" style="font-size:20px;position:relative;left:10px;bottom:2px;width:60px"></input>
+	</div>
+	
+	<p5>Theta2:</p5>
+	<div class="slidecontainer">
+    	<input step="any" style="width:300px" type="range" min="-315" max="314.2" value="39" class="slider" id="th2Slider">
+    	<input id="th2Val" style="font-size:20px;position:relative;left:10px;bottom:2px;width:60px"></input>
+	</div>
+    
+    <div id="dc" style="position:relative; top:20px">
+	    <canvas id="screen" width=500 height=500 style="border:1px solid #c3c3c3;">
+	    </canvas>
+	</div>
+<script>
+	//this is the main canvas
+    //it's cleared every frame 
+	var canv = document.getElementById("screen");
+	var ctx = canv.getContext("2d");
+	ctx.strokeStyle='#AAAAAA';
+	
+	//this is canvas only for drawing trace
+    //it's not cleared every frame,
+    //but copied to the main canvas
+	var trace = document.createElement("canvas");
+	trace.width = canv.width;
+	trace.height = canv.height;
+	var traceCtx = trace.getContext("2d");
+	traceCtx.strokeStyle="#FF6666";
+
+    //for displaying angle and other stuff
+	var th1Display = document.getElementById("th1Val");
+	var th2Display = document.getElementById("th2Val");
+	var dtDisplay = document.getElementById("dtVal");
+	var L1Display = document.getElementById("L1Val");
+	var L2Display = document.getElementById("L2Val");
+	
+	var radius = 5;
+	//anchor point
+	var anchX = canv.width/2;
+    var anchY = canv.height/2;
+    //lengths
+    var L1 = 100;
+    var L2 = 100;
+    //masses
+    var m1 = 10;
+    var m2 = 10;
+    //gravitational acceleration
+    var g = 1;
+    //time step
+    var dt = 0.3;
+    
+    //initial angles
+    var initialTh1 = Math.PI/2;
+    var initialTh2 = 5*Math.PI/8;
+    //angles
+    var th1 = initialTh1;
+    var th2 = initialTh2;
+    //angular velocities 
+    var om1 = 0;
+    var om2 = 0;
+	
+	var running = true;
+	var tracing = true;
+    
+    //previous coordinates for drawing traces
+    var prevx = anchX + L1*Math.sin(initialTh1)
+					+ L2*Math.sin(initialTh2);
+    var prevy = anchY + L1*Math.cos(initialTh1)
+					+ L2*Math.cos(initialTh2);
+					
+	//displaying values
+	dtDisplay.value = +dt.toFixed(2);
+	L1Display.value = L1;
+	L2Display.value = L2;
+   
+    //following 2 methods contain equations from:
+    //https://www.myphysicslab.com/pendulum/double-pendulum-en.html
+    //thank them for it
+    function epsilon1dt(theta1,theta2,omega1,omega2)
+    {
+    	return dt*(-g*(2*m1+m2)*Math.sin(theta1) 
+    		   -m2*g*Math.sin(theta1-2*theta2)
+    		   -2*Math.sin(theta1-theta2)
+    		   *m2*(omega2*omega2*L2
+			   +omega1*omega1*L1
+		       *Math.cos(theta1-theta2)))
+			   /(L1*(2*m1+m2-m2*Math.cos(2*theta1-2*theta2)));
+    }
+    
+    function epsilon2dt(theta1,theta2,omega1,omega2)
+    {
+    	
+    	return dt*(2*Math.sin(theta1-theta2)
+    		   *(omega1*omega1*L1*(m1+m2)
+    		   +g*(m1+m2)*Math.cos(theta1)
+    		   +omega2*omega2*L2*m2
+    		   *Math.cos(theta1-theta2)))
+    		   /(L2*(2*m1+m2-m2*Math.cos(2*theta1-2*theta2)));
+    }
+    
+    function omegadt(omega)
+    {
+    	return omega * dt;
+    }
+        
+    function drawStr(x1, y1, x2, y2)
+    {
+        ctx.beginPath();
+        ctx.moveTo(x1,y1);
+        ctx.lineTo(x2,y2);
+        ctx.closePath();
+        ctx.stroke();
+    }
+        
+    function drawBall(x,y,color)
+    {
+    	ctx.fillStyle=color;
+    	ctx.beginPath();
+        ctx.arc(x,y,radius,0,2*Math.PI);
+        ctx.closePath(); 
+        ctx.fill();
+    }
+    
+    function drawPendulum()
+    {
+    	let x1 = anchX + L1*Math.sin(th1);
+    	let y1 = anchY + L1*Math.cos(th1);
+    	
+    	let x2 = x1 + L2*Math.sin(th2);
+    	let y2 = y1 + L2*Math.cos(th2);
+   
+        //instead of clearing
+   	 ctx.fillStyle="#000000";
+   	 ctx.fillRect(0,0,canv.width,canv.height);
+   
+   	 if(tracing && running)
+   	 {
+   	     //tracing on a different canvas
+			traceCtx.beginPath();
+			traceCtx.moveTo(prevx,prevy);
+			traceCtx.lineTo(x2,y2);
+			traceCtx.closePath();
+			traceCtx.stroke();
+   	 }
+   	 //copying to main canvas
+		ctx.drawImage(trace,0,0);
+   
+    	drawStr(anchX,anchY,x1,y1);
+    	drawStr(x1,y1,x2,y2);
+    
+    	drawBall(x1,y1,"#00FFFF");
+    	drawBall(x2,y2,"#00FFFF");
+    
+    	prevx = x2;
+    	prevy = y2;
+    }
+    
+    function update()
+    {
+    	//implementation of Runge-Kutta method from:
+        //https://www.myphysicslab.com/explain/runge-kutta-en.html
+        //thank them again
+    	let A1 = omegadt(om1);
+    	let A2 = omegadt(om2);
+    	let A3 = epsilon1dt(th1,th2,om1,om2);
+    	let A4 = epsilon2dt(th1,th2,om1,om2);
+    
+    	let B1 = omegadt(om1 + A3/2);
+    	let B2 = omegadt(om2 + A4/2);
+    	let B3 = epsilon1dt(th1+A1/2,th2+A2/2,om1+A3/2,om2+A4/2);
+    	let B4 = epsilon2dt(th1+A1/2,th2+A2/2,om1+A3/2,om2+A4/2);	
+    
+    	let C1 = omegadt(om1 + B3/2);
+    	let C2 = omegadt(om2 + B4/2);
+    	let C3 = epsilon1dt(th1+B1/2,th2+B2/2,om1+B3/2,om2+B4/2);
+    	let C4 = epsilon2dt(th1+B1/2,th2+B2/2,om1+B3/2,om2+B4/2);
+    
+    	let D1 = omegadt(om1 + C3);
+    	let D2 = omegadt(om2 + C4);
+    	let D3 = epsilon1dt(th1+C1,th2+C2,om1+C3,om2+C4);
+    	let D4 = epsilon2dt(th1+C1,th2+C2,om1+C3,om2+C4);
+    
+    	om1 += (A3+2*B3+2*C3+D3)/6;
+    	om2 += (A4+2*B4+2*C4+D4)/6;
+    
+    	th1 += (A1+2*B1+2*C1+D1)/6;
+    	th2 += (A2+2*B2+2*C2+D2)/6;
+   
+    	th1Display.value = String(+th1.toFixed(2));
+    	th2Display.value = String(+th2.toFixed(2));
+    
+        //mod 2pi but from -pi to pi
+    	if(th1>Math.PI) th1-=2*Math.PI;
+    	if(th2>Math.PI) th2-=2*Math.PI;
+    	if(th1<-Math.PI) th1+=2*Math.PI;
+    	if(th2<-Math.PI) th2+=2*Math.PI;
+    }
+	
+	var dtSlider = document.getElementById("dtSlider");
+	dtSlider.oninput = function(){
+		dt = 0.3*Math.exp(2*(this.value/50-1));
+		dtDisplay.value = +dt.toFixed(2);
+	}
+	
+	var L1Slider = document.getElementById("L1Slider");
+	L1Slider.oninput = function(){
+		L1 = this.value;
+		L1Display.value = L1;
+		drawPendulum();
+	}
+	
+	var L2Slider = document.getElementById("L2Slider");
+	L2Slider.oninput = function(){
+		L2 = this.value;
+		L2Display.value = L2;
+		drawPendulum();
+	}
+	
+	var th1Slider = document.getElementById("th1Slider");
+	th1Slider.oninput = function(){
+		initialTh1 = th1 = this.value*0.01;
+		restart();
+	}
+	
+	var th2Slider = document.getElementById("th2Slider");
+	th2Slider.oninput = function(){
+		initialTh2 = th2 = this.value*0.01;
+		restart();
+	}
+	
+	dtDisplay.onchange = function(){
+		dt = +this.value;
+		dtSlider.value = 25*Math.log(dt/0.3)+50;
+	}
+	
+	L1Display.onchange = function(){
+		L1Slider.value = L1 = +this.value;
+		drawPendulum();
+	}
+	
+	L2Display.onchange = function(){
+		L2Slider.value = L2 = +this.value;
+		drawPendulum();
+	}
+	
+	th1Display.onchange = function(){
+		initialTh1 = +this.value;
+		th1Slider.value = initialTh1*100;
+		restart();
+	}
+	
+	th2Display.onchange = function(){
+		initialTh2 = +this.value;
+		th2Slider.value = initialTh2*100;
+		restart();
+	}
+    
+    window.requestAnimationFrame(frame);
+	
+	function pause()
+	{
+		running=!running;
+	}
+	
+	function restart()
+	{
+		//cleared only for restart
+		traceCtx.clearRect(0,0,trace.width,trace.height);
+		
+		th1 = initialTh1;
+		th2 = initialTh2;
+		
+		th1Display.value = String(+th1.toFixed(2));
+    	th2Display.value = String(+th2.toFixed(2));
+		
+		om1 = 0;
+		om2 = 0;
+		
+		prevx = anchX + L1*Math.sin(initialTh1)
+					+ L2*Math.sin(initialTh2);
+   	 prevy = anchY + L1*Math.cos(initialTh1)
+					+ L2*Math.cos(initialTh2);
+		
+		drawPendulum();
+		running = false;
+	}
+	
+	function toggleTrace()
+	{
+		var button = document.getElementById("traceButton");
+		if(tracing)
+		{
+			tracing = false;
+			button.innerHTML = "Tracing: off";
+		}
+		else
+		{
+			tracing = true;
+			button.innerHTML = "Tracing: on";
+		}
+	}
+	
+	function frame()
+	{
+		if(running)
+		{
+			update();
+			
+			th1Slider.value = th1*100;
+			th2Slider.value = th2*100;
+			
+			drawPendulum();
+		}
+		window.requestAnimationFrame(frame);
+	}
+</script>
+</body>
+</html>
